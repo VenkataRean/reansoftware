@@ -1,0 +1,145 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description" : "AWS CloudFormation Sample Template LAMP_Single_Instance: Create a LAMP stack using a single EC2 instance and a local MySQL database for storage. This template demonstrates using the AWS CloudFormation bootstrap scripts to install the packages and files necessary to deploy the Apache web server, PHP and MySQL at instance launch time. **WARNING** This template creates an Amazon EC2 instance. You will be billed for the AWS resources used if you create a stack from this template.",
+
+"Parameters" : {
+  "KeyName": {
+    "Description" : "Name of an existing EC2 KeyPair to enable SSH access to the instance",
+    "Type": "AWS::EC2::KeyPair::KeyName",
+    "ConstraintDescription" : "must be the name of an existing EC2 KeyPair."
+  }
+},
+"Resources" : {
+"VPC" : {
+    "Type" : "AWS::EC2::VPC",
+    "Properties" : {
+      "CidrBlock" : "10.0.0.0/16",
+      "EnableDnsSupport": "true",
+      "EnableDnsHostnames": "true",
+      "InstanceTenancy": "default",
+      "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+    }
+  },
+  "venkatPublicSubnet": {
+          "Type": "AWS::EC2::Subnet",
+          "Properties": {
+              "VpcId": { "Ref": "VPC" },
+              "AvailabilityZone": "us-east-1a",
+              "CidrBlock": "10.0.0.0/24",
+              "MapPublicIpOnLaunch": "true"
+          }
+      },
+  "InternetGateway" : {
+         "Type" : "AWS::EC2::InternetGateway",
+         "Properties" : {
+           "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+         }
+       },
+ "AttachGateway" : {
+    "Type" : "AWS::EC2::VPCGatewayAttachment",
+    "Properties" : {
+      "VpcId" : { "Ref" : "VPC" },
+      "InternetGatewayId" : { "Ref" : "InternetGateway" }
+    }
+ },
+ "PublicRouteTable" : {
+    "Type" : "AWS::EC2::RouteTable",
+    "Properties" : {
+      "VpcId" : {"Ref" : "VPC"},
+      "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} } ]
+    }
+  },
+  "publicRoute" : {
+    "Type" : "AWS::EC2::Route",
+    "DependsOn" : "AttachGateway",
+    "Properties" : {
+      "RouteTableId" : { "Ref" : "PublicRouteTable" },
+      "DestinationCidrBlock" : "0.0.0.0/0",
+      "GatewayId" : { "Ref" : "InternetGateway" }
+    }
+  },
+  "PublicSubnet1RouteTableAssociation" : {
+             "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+             "Properties" : {
+                "SubnetId" : { "Ref" : "venkatPublicSubnet" },
+                "RouteTableId" : { "Ref" : "PublicRouteTable" }
+             }
+          },
+  "VenkataInstance": {
+              "Type": "AWS::EC2::Instance",
+              "Properties": {
+                "AvailabilityZone": "us-east-1a",
+                "InstanceType": "p2.xlarge",
+                "ImageId": "ami-8c1be5f6",
+                "KeyName": { "Ref" : "KeyName" },
+                "UserData": { "Fn::Base64" : { "Fn::Join" : ["", [
+                        "#!/bin/bash \n ",
+                        "sudo yum update -y \n",
+                        "sudo su \n",
+                        "cd \n",
+                        "cd ~ \n",
+                        "wget https://repo.continuum.io/archive/Anaconda3-5.0.0.1-Linux-x86_64.sh -O ~/Anaconda3-5.0.0.1-Linux-x86_64.sh \n",
+                        "bash ~/Anaconda3-5.0.0.1-Linux-x86_64.sh -b -p $root/anaconda3 \n",
+                        "export PATH=$PATH:/anaconda3/bin \n",
+                        "conda install -c omnia msmbuilder -y \n",
+                        "cd /dev/shm/ \n",
+                        "yum install cmake -y \n",
+                        "wget https://cmake.org/files/v3.10/cmake-3.10.0-rc1.tar.gz \n",
+                        "wget http://www.fftw.org/fftw-3.3.6-pl2.tar.gz \n",
+                        "wget ftp://ftp.gromacs.org/pub/gromacs/gromacs-2016.4.tar.gz \n",
+                        "wget https://s3.amazonaws.com/venkatarean/knime_3.4.1.linux.gtk.x86_64.tar.gz \n",
+                        "tar -zxvf knime_3.4.1.linux.gtk.x86_64.tar.gz \n",
+                        "yum groupinstall 'Development Tools' -y \n",
+                        "tar -xzvf cmake-3.10.0-rc1.tar.gz \n",
+                        "cd cmake-3.10.0-rc1 \n",
+                        "./configure \n",
+                        "make install \n",
+                        "cd /dev/shm/ \n",
+                        "tar -xzvf fftw-3.3.6-pl2.tar.gz \n",
+                        "cd fftw-3.3.6-pl2 \n",
+                        "./configure \n",
+                        "make install \n",
+                        "cd /dev/shm/ \n",
+                        "tar xvzf gromacs-2016.4.tar.gz \n",
+                        "cd gromacs-2016.4 \n",
+                        "mkdir build \n",
+                        "cd build \n",
+                        "cmake .. -DGMX_BUILD_OWN_FFTW=ON -DREGRESSIONTEST_DOWNLOAD=ON \n",
+                        "make \n",
+                        "make check \n",
+                        "make install \n",
+                        "source /usr/local/gromacs/bin/GMXRC \n",
+                        "export PATH=$PATH:/usr/local/gromacs/bin/gmx "
+                  ]]}},
+                "NetworkInterfaces": [{
+                    "AssociatePublicIpAddress": "true",
+                    "DeviceIndex": "0",
+                    "GroupSet": [{ "Ref": "venkataSecurityGroup" }],
+                    "SubnetId": { "Ref":"venkatPublicSubnet" }
+                }],
+                "BlockDeviceMappings": [{
+                    "DeviceName": "/dev/sdm",
+                    "Ebs": {
+                      "VolumeType": "io1",
+                      "Iops": "100",
+                      "DeleteOnTermination": "false",
+                      "VolumeSize": "32"
+                    }
+                }],
+                "Tags" : [{"Key": "Name", "Value":"Venkatagmr_msm_knime"}, {"Key": "Owner", "Value": "venkata.bandreddi"}, {"Key": "Environment", "Value": "Development"}, {"Key": "ExpirationDate", "Value": "2017-10-30"}, {"Key": "Project", "Value": "learning"}]
+              }
+              },
+  "venkataSecurityGroup" : {
+          "Type" : "AWS::EC2::SecurityGroup",
+          "Properties" : {
+            "GroupDescription" : "Enable HTTP access via port 80",
+            "SecurityGroupIngress" : [
+                {"IpProtocol" : "tcp", "FromPort" : "80", "ToPort" : "80", "CidrIp" : "72.196.48.126/32"},
+    		    {"IpProtocol" : "tcp", "FromPort" : "443", "ToPort" : "443", "CidrIp" : "72.196.48.126/32"},
+                {"IpProtocol" : "tcp", "FromPort" : "22", "ToPort" : "22", "CidrIp" : "72.196.48.126/32"}
+            ],
+            "VpcId": { "Ref": "VPC" }
+        }
+      }
+    }
+}
